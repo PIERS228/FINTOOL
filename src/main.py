@@ -239,4 +239,168 @@ def generate_html_report(data):
         function updateTable(tableId, stockData) {{
             const tableDiv = document.getElementById(tableId);
             if (stockData && stockData[tableId]) {{
-                const headers = Object.ke
+                const headers = Object.keys(stockData[tableId][0]).filter(k => k !== 'STD_ITEM_NAME');
+                let html = '<table><tr><th>项目</th>';
+                
+                headers.forEach(header => html += `<th>${{header}}</th>`);
+                html += '</tr>';
+                
+                stockData[tableId].forEach(row => {{
+                    html += `<tr><td>${{row.STD_ITEM_NAME}}</td>`;
+                    headers.forEach(header => {{
+                        html += `<td class="amount">${{row[header] || '-'}}</td>`;
+                    }});
+                    html += '</tr>';
+                }});
+                
+                html += '</table>';
+                tableDiv.innerHTML = html;
+            }} else {{
+                tableDiv.innerHTML = '<p>暂无数据</p>';
+            }}
+        }}
+        
+        // 聊天功能
+        function sendMessage() {{
+            const input = document.getElementById('chat-input');
+            const message = input.value.trim();
+            if (message) {{
+                addMessage(message, 'user');
+                input.value = '';
+                
+                // 显示加载指示器
+                const loadingDiv = document.createElement('div');
+                loadingDiv.className = 'message ai-message';
+                loadingDiv.innerHTML = '<div class="loading"></div>';
+                document.getElementById('chat-container').appendChild(loadingDiv);
+                scrollChat();
+                
+                // 调用AI分析
+                analyzeFinancialData(currentStock, message)
+                    .then(response => {{
+                        document.getElementById('chat-container').removeChild(loadingDiv);
+                        addMessage(response, 'ai');
+                    }})
+                    .catch(error => {{
+                        document.getElementById('chat-container').removeChild(loadingDiv);
+                        addMessage('分析时出错: ' + error.message, 'ai');
+                    }});
+            }}
+        }}
+        
+        function askQuestion(question) {{
+            document.getElementById('chat-input').value = question;
+            sendMessage();
+        }}
+        
+        function handleKeyPress(event) {{
+            if (event.key === 'Enter') {{
+                sendMessage();
+            }}
+        }}
+        
+        function addMessage(text, sender) {{
+            const container = document.getElementById('chat-container');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${{sender}}-message`;
+            messageDiv.textContent = text;
+            container.appendChild(messageDiv);
+            scrollChat();
+        }}
+        
+        function scrollChat() {{
+            const container = document.getElementById('chat-container');
+            container.scrollTop = container.scrollHeight;
+        }}
+        
+        // 调用DeepSeek API
+        async function analyzeFinancialData(stockCode, question) {{
+            const stockData = reportsData[stockCode];
+            if (!stockData) return '未找到该股票的财务数据';
+            
+            // 准备提示词
+            const prompt = `你是一位专业的财务分析师。请根据以下财务数据回答问题: ${{question}}
+            
+            当前股票代码: ${{stockCode}}
+            
+            资产负债表数据:
+            ${{JSON.stringify(stockData.balance_sheet || [])}}
+            
+            利润表数据:
+            ${{JSON.stringify(stockData.income_statement || [])}}
+            
+            现金流量表数据:
+            ${{JSON.stringify(stockData.cash_flow || [])}}
+            
+            请用专业但易懂的语言回答，可以包含具体数字和分析。如果数据不足，请说明。`;
+            
+            try {{
+                const response = await fetch('https://api.deepseek.com/v1/chat/completions', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${{DEEPSEEK_API_KEY}}`
+                    }},
+                    body: JSON.stringify({{
+                        model: 'deepseek-chat',
+                        messages: [
+                            {{
+                                role: 'system',
+                                content: '你是一位专业的财务分析师，擅长解读财务报表并提供投资建议。'
+                            }},
+                            {{
+                                role: 'user',
+                                content: prompt
+                            }}
+                        ],
+                        temperature: 0.7,
+                        max_tokens: 1000
+                    }})
+                }});
+                
+                if (!response.ok) {{
+                    throw new Error(`API请求失败: ${{response.status}}`);
+                }}
+                
+                const data = await response.json();
+                return data.choices[0].message.content;
+            }} catch (error) {{
+                console.error('API调用错误:', error);
+                return '无法获取分析结果，请稍后再试。';
+            }}
+        }}
+        
+        // 初始化显示
+        updateDisplay();
+    </script>
+</body>
+</html>"""
+    
+    return html
+
+def save_report_to_file(html_content, filename='report.html'):
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    report_path = os.path.join(current_dir, filename)
+    
+    with open(report_path, 'w', encoding='utf-8') as f:
+        f.write(html_content)
+    
+    print(f"报告已保存到: {report_path}")
+
+if __name__ == "__main__":
+    print("开始加载和处理数据...")
+    financial_data = load_and_process_data()
+    print("\n数据处理完成!")
+    
+    print("\n正在生成HTML报告...")
+    html_report = generate_html_report(financial_data)
+    
+    # 保存报告
+    save_report_to_file(html_report)
+    
+    # 在Jupyter环境中显示报告
+    try:
+        from IPython.display import display, HTML
+        display(HTML(html_report))
+    except:
+        print("报告生成完成，请在浏览器中打开 src/report.html 查看")
